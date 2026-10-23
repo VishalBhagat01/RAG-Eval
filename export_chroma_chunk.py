@@ -12,7 +12,7 @@ scan them (e.g. to hand-pick ideal_context for the faithfulness dataset).
 """
 
 import json
-from src.retriever import load_store   # reuse the retriever's store loader
+from src.retriver import load_store   # reuse the retriever's store loader
 
 # open the already-built store (no re-embedding)
 store = load_store()
