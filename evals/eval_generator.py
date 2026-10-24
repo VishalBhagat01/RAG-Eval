@@ -20,12 +20,18 @@ from deepeval.test_case import LLMTestCase
 from deepeval.metrics import FaithfulnessMetric, AnswerRelevancyMetric
 
 from src.generator import generate   # your generator: generate(query, context) -> answer
-from evals.harness import load_goldens, summarize_by_metric, print_summary
+from evals.harness import (
+    evaluation_options,
+    get_judge_model,
+    load_goldens,
+    summarize_by_metric,
+    print_summary,
+)
 
 load_dotenv()
 
 GOLDEN_PATH = "goldens/faithfullness_dataset.json"
-JUDGE_MODEL = "gemini-2.5-flash-list"
+JUDGE_MODEL = get_judge_model()
 THRESHOLD = 0.2
 
 
@@ -63,7 +69,11 @@ def run():
     ]
 
     # 4. EVALUATE --- runs the metrics on every case, prints a report
-    result = evaluate(test_cases=test_cases, metrics=metrics)
+    result = evaluate(
+        test_cases=test_cases,
+        metrics=metrics,
+        **evaluation_options(),
+    )
     return summarize_by_metric(result)
 
 

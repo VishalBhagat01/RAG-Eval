@@ -22,6 +22,52 @@ flag, so it stays correct whether higher or lower score is "good".
 """
 
 import json
+import os
+import sys
+
+from deepeval.evaluate.configs import AsyncConfig, CacheConfig, ErrorConfig
+from deepeval.models import OllamaModel, OpenAIModel
+
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+
+def get_judge_model():
+    """Return an explicit DeepEval model adapter instead of an ambiguous name."""
+    provider = os.getenv("EVAL_JUDGE_PROVIDER", "auto").lower()
+    if provider == "auto":
+        provider = "groq" if os.getenv("GROQ_API_KEY") else "ollama"
+
+    if provider == "groq":
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "EVAL_JUDGE_PROVIDER=groq requires GROQ_API_KEY in the environment."
+            )
+        return OpenAIModel(
+            model=os.getenv("EVAL_JUDGE_MODEL", "qwen2.5:0.5b"),
+            api_key=api_key,
+            base_url=os.getenv(
+                "GROQ_BASE_URL", "https://api.groq.com/openai/v1"
+            ),
+            temperature=0,
+        )
+    if provider == "ollama":
+        return OllamaModel(
+            model=os.getenv("EVAL_JUDGE_MODEL", "qwen2.5:0.5b"),
+            base_url=os.getenv("EVAL_JUDGE_BASE_URL", "http://localhost:11434"),
+            temperature=0,
+        )
+    raise ValueError("Unsupported EVAL_JUDGE_PROVIDER. Use 'ollama', 'groq', or 'auto'.")
+
+
+def evaluation_options():
+    return {
+        "async_config": AsyncConfig(run_async=False),
+        "cache_config": CacheConfig(write_cache=False, use_cache=False),
+        "error_config": ErrorConfig(ignore_errors=True),
+    }
 
 
 def load_goldens(path):

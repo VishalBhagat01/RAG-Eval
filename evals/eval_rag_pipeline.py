@@ -10,12 +10,18 @@ from deepeval.metrics import (
 )
 
 from src.rag_pipeline import RagPipeline
-from evals.harness import load_goldens, summarize_by_metric, print_summary
+from evals.harness import (
+    evaluation_options,
+    get_judge_model,
+    load_goldens,
+    summarize_by_metric,
+    print_summary,
+)
 
 load_dotenv()
 
 GOLDEN_PATH = "goldens/faithfulness_dataset.json"   # reuse the queries
-JUDGE_MODEL = "ollama"
+JUDGE_MODEL = get_judge_model()
 THRESHOLD = 0.7
 
 
@@ -44,7 +50,11 @@ def run(rag):
     ]
 
     # 4. EVALUATE
-    result = evaluate(test_cases=test_cases, metrics=metrics)
+    result = evaluate(
+        test_cases=test_cases,
+        metrics=metrics,
+        **evaluation_options(),
+    )
     return summarize_by_metric(result)
 
 

@@ -30,6 +30,10 @@ class RagPipeline:
 
 # quick manual smoke test: python -m src.rag_pipeline
 if __name__ == "__main__":
+    import sys
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     
     rag = RagPipeline()
     result = rag.invoke("Why do we need golden datasets?")

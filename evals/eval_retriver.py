@@ -1,17 +1,24 @@
 # eval_retriever.py
 from dotenv import load_dotenv
+import os
 
 from deepeval import evaluate
 from deepeval.test_case import LLMTestCase
 from deepeval.metrics import ContextualRecallMetric, ContextualPrecisionMetric
 
 from src.reranker import RerankingRetriever
-from evals.harness import load_goldens, summarize_by_metric, print_summary
+from evals.harness import (
+    get_judge_model,
+    evaluation_options,
+    load_goldens,
+    summarize_by_metric,
+    print_summary,
+)
 
 load_dotenv()
 
-GOLDEN_PATH = "goldens/retriever_goldens.json"
-JUDGE_MODEL = "gemini-3.5-flash-lite"   # NOTE: differs from the other evals (gpt-4o-mini)
+GOLDEN_PATH = "goldens/retriver_golden.json"
+JUDGE_MODEL = get_judge_model()
 THRESHOLD = 0.7
 
 
@@ -52,9 +59,10 @@ def run(retriever):
             "chunk_size": 1000,
             "chunk_overlap": 150,
             "top_k": 3,
-            "judge_model": JUDGE_MODEL,
+            "judge_model": os.getenv("EVAL_JUDGE_MODEL", "qwen2.5:0.5b"),
             "golden_set": GOLDEN_PATH,
         },
+        **evaluation_options(),
     )
     return summarize_by_metric(result)
 

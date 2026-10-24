@@ -17,17 +17,14 @@ Both share the exact same prompt, model, and chain — the only difference is
 that one waits for the whole answer and the other emits it token-by-token.
 """
 
-from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+from functools import lru_cache
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
-llm = ChatOllama(
-    model="qwen2.5-coder:3b",
-    temperature=0.2
-)
 # faithfulness-first prompt: ground every claim in the context, abstain if unsure
 prompt = ChatPromptTemplate.from_template(
     """
@@ -88,13 +85,49 @@ Answer:
 )
 
 
-chain = prompt | llm | StrOutputParser()
+@lru_cache(maxsize=1)
+def _chain():
+    provider = os.getenv("LLM_PROVIDER", "auto").lower()
+    if provider == "auto":
+        provider = "groq" if os.getenv("GROQ_API_KEY") else "ollama"
+
+    if provider == "ollama":
+        from langchain_ollama import ChatOllama
+
+        llm = ChatOllama(
+            model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:3b"),
+            temperature=0.2,
+            base_url=os.getenv("OLLAMA_BASE_URL")
+            or os.getenv("LOCAL_MODEL_BASE_URL")
+            or None,
+        )
+    elif provider == "groq":
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "LLM_PROVIDER=groq requires GROQ_API_KEY in the environment."
+            )
+        from langchain_openai import ChatOpenAI
+
+        llm = ChatOpenAI(
+            model=os.getenv(
+                "GROQ_MODEL",
+                "openai/gpt-oss-20b",
+            ),
+            temperature=0.2,
+            api_key=api_key,
+            base_url=os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+        )
+    else:
+        raise ValueError("Unsupported LLM_PROVIDER. Use 'ollama', 'groq', or 'auto'.")
+
+    return prompt | llm | StrOutputParser()
 
 
 def generate(query: str, context: list[str]) -> str:
     """Generate a grounded answer from the query and context chunks."""
     context_text = "\n\n".join(context)
-    return chain.invoke({"question": query, "context": context_text})
+    return _chain().invoke({"question": query, "context": context_text})
 
 
 def generate_stream(query: str, context: list[str]):
@@ -110,7 +143,7 @@ def generate_stream(query: str, context: list[str]):
              caller can clock time-to-first-token on the first *visible* token.
     """
     context_text = "\n\n".join(context)
-    for chunk in chain.stream({"question": query, "context": context_text}):
+    for chunk in _chain().stream({"question": query, "context": context_text}):
         if chunk:                      # skip empty leading chunks
             yield chunk
 

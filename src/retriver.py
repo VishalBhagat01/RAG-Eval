@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import re
 import glob
 
@@ -9,26 +10,30 @@ from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
-load_dotenv()  
+load_dotenv()
 
-DATA_DIR = "data"
-DB_DIR = "chroma_store"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+DB_DIR = PROJECT_ROOT / "chroma_store"
 
 
 # 1. LOAD ---- read each transcript, throw away the VTT timestamps
 def load_transcripts():
 
     docs = []
-    for path in glob.glob(f"{DATA_DIR}/*.vtt"):
+    for path in glob.glob(str(DATA_DIR / "*.vtt")):
         lines = []
-        for line in open(path):
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line == "WEBVTT" or "-->" in line:
                 continue
             lines.append(line)
         text = " ".join(lines)
 
-        session = re.search(r"Session[ _]*(\d+)", path).group(1)
+        match = re.search(r"Session[ _]*(\d+)", path, re.IGNORECASE)
+        if match is None:
+            raise ValueError(f"Could not find a session number in transcript path: {path}")
+        session = match.group(1)
 
         docs.append(Document(page_content=text, metadata={"session": session}))
 
@@ -36,22 +41,50 @@ def load_transcripts():
 
 
 # 2. BUILD ---- chunk, embed once, and keep it on disk so we don't re-embed
-def load_store():
-    embeddings = OllamaEmbeddings(
-        model="nomic-embed-text"
+def _embeddings():
+    provider = os.getenv("EMBEDDING_PROVIDER", "huggingface").lower()
+    if provider == "ollama":
+        return OllamaEmbeddings(
+            model=os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"),
+            base_url=os.getenv("OLLAMA_BASE_URL")
+            or os.getenv("LOCAL_MODEL_BASE_URL")
+            or None,
+        )
+    if provider in {"huggingface", "hf"}:
+        return HuggingFaceEmbeddings(
+            model_name=os.getenv(
+                "HUGGINGFACE_EMBEDDING_MODEL",
+                "sentence-transformers/all-MiniLM-L6-v2",
+            )
+        )
+    raise ValueError(
+        "Unsupported EMBEDDING_PROVIDER. Use 'huggingface' or 'ollama'."
     )
 
-    if os.path.exists(DB_DIR):
-        return Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
+
+def load_store():
+    embeddings = _embeddings()
+    store = Chroma(
+        persist_directory=str(DB_DIR),
+        embedding_function=embeddings,
+    )
+    if store._collection.count() > 0:
+        return store
 
     docs = load_transcripts()
+    if not docs:
+        raise FileNotFoundError(f"No .vtt transcripts found in {DATA_DIR}")
 
     chunks = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=150,
     ).split_documents(docs)
 
-    return Chroma.from_documents(chunks, embeddings, persist_directory=DB_DIR)
+    return Chroma.from_documents(
+        chunks,
+        embeddings,
+        persist_directory=str(DB_DIR),
+    )
 
 
 def build_retriever():
